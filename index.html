@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title></title>
+  <style>
+    html, body {
+      width: 100%; height: 100%; margin: 0; padding: 0;
+      overflow: hidden; background: #000; touch-action: manipulation;
+      -webkit-user-select: none; user-select: none;
+    }
+    #screen {
+      position: fixed; inset: 0;
+      background: #000 url("closed.png") center center / contain no-repeat;
+    }
+    #screen.talking {
+      background-image: url("open.png");
+    }
+    #left, #center, #right {
+      position: absolute; top: 0; bottom: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #left { left: 0; width: 33.3333%; }
+    #center { left: 33.3333%; width: 33.3334%; }
+    #right { right: 0; width: 33.3333%; }
+
+    #settings-panel {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(48, 56, 64, 0.85);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 12px;
+      font-family: sans-serif;
+      font-size: 14px;
+      z-index: 10;
+      text-align: center;
+      backdrop-filter: blur(5px);
+      pointer-events: auto;
+    }
+    #settings-panel input[type=range] {
+      width: 150px;
+      vertical-align: middle;
+      margin-left: 8px;
+    }
+    #debug-info {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #9de5a5;
+    }
+  </style>
+</head>
+<body>
+  <main id="screen" aria-label="音声プレイヤー">
+    <div id="left"></div>
+    <div id="center"></div>
+    <div id="right"></div>
+
+    <div id="settings-panel" onclick="event.stopPropagation()">
+      <div>感度しきい値: <span id="thresholdValue">1</span> <input type="range" id="threshold" min="0.1" max="10" step="0.1" value="1"></div>
+      <div id="debug-info">現在の音量: 0.00</div>
+    </div>
+  </main>
+
+  <script>
+    // ==========================================
+    // 設定エリア
+    // ==========================================
+    const speeches = [
+      "audio/01_opening.mp3",
+      "audio/02_kanpai.mp3",
+      "audio/03_toast.mp3"
+    ];
+
+    const CLOSED_IMAGE = "closed.png";
+    const OPEN_IMAGE   = "open.png";
+    // ==========================================
+
+    let current = 0;
+    let audioCtx = null;
+    let analyser = null;
+    let dataArray = null;
+    let currentSourceNode = null;
+    let audioBuffers = {}; // 読み込んだ音声をキャッシュ
+    
+    let isPlaying = false;
+    let isTalking = false;
+    let lastSoundTime = 0;
+    let startTime = 0;
+    let pauseOffset = 0;
+    let wakeLock = null;
+
+    const screenEl = document.getElementById("screen");
+    const thresholdInput = document.getElementById("threshold");
+    const thresholdValueEl = document.getElementById("thresholdValue");
+    const debugInfoEl = document.getElementById("debug-info");
+
+    thresholdInput.addEventListener("input", () => {
+      thresholdValueEl.textContent = thresholdInput.value;
+    });
+
+    new Image().src = CLOSED_IMAGE;
+    new Image().src = OPEN_IMAGE;
+
+    function initAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.fftSize);
+        detectVolume();
+      }
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+    }
+
+    // 音声ファイルを fetch で取得してデコードする
+    async function loadAudioBuffer(url) {
+      if (audioBuffers[url]) return audioBuffers[url];
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      audioBuffers[url] = audioBuffer;
+      return audioBuffer;
+    }
+
+    // 音量検知ループ
+    function detectVolume() {
+      requestAnimationFrame(detectVolume);
+      if (!analyser || !dataArray || !isPlaying) {
+        if (isTalking) {
+          isTalking = false;
+          screenEl.classList.remove("talking");
+        }
+        debugInfoEl.textContent = "現在の音量: 0.00 (停止中)";
+        return;
+      }
+
+      analyser.getByteTimeDomainData(dataArray);
+      
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const value = (dataArray[i] - 128) / 128;
+        sum += value * value;
+      }
+      const rms = Math.sqrt(sum / dataArray.length);
+      const volume = rms * 100;
+
+      debugInfoEl.textContent = `現在の音量: ${volume.toFixed(2)}`;
+
+      const limit = Number(thresholdInput.value);
+
+      if (volume > limit) {
+        if (!isTalking) {
+          isTalking = true;
+          screenEl.classList.add("talking");
+        }
+        lastSoundTime = performance.now();
+      } else if (isTalking && performance.now() - lastSoundTime > 150) {
+        isTalking = false;
+        screenEl.classList.remove("talking");
+      }
+    }
+
+    // 再生停止
+    function stopCurrentAudio() {
+      if (currentSourceNode) {
+        try { currentSourceNode.stop(); } catch(e) {}
+        currentSourceNode.disconnect();
+        currentSourceNode = null;
+      }
+      isPlaying = false;
+    }
+
+    // 音声の再生
+    async function playAudio(index, offset = 0) {
+      if (speeches.length === 0) return;
+      initAudioContext();
+      stopCurrentAudio();
+
+      current = Math.max(0, Math.min(index, speeches.length - 1));
+      
+      try {
+        const buffer = await loadAudioBuffer(speeches[current]);
+        
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        
+        // アナライザー（口パク用）とスピーカー（出力用）に接続
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+
+        source.onended = () => {
+          if (isPlaying && currentSourceNode === source) {
+            stopCurrentAudio();
+          }
+        };
+
+        startTime = audioCtx.currentTime - offset;
+        source.start(0, offset);
+        currentSourceNode = source;
+        isPlaying = true;
+        requestWakeLock();
+      } catch (err) {
+        console.error("Audio load/play error:", err);
+      }
+    }
+
+    async function togglePlayback() {
+      if (!speeches.length) return;
+      initAudioContext();
+
+      if (isPlaying) {
+        // 一時停止（位置を記憶）
+        pauseOffset = audioCtx.currentTime - startTime;
+        stopCurrentAudio();
+      } else {
+        if (!currentSourceNode && pauseOffset === 0) {
+          await playAudio(current, 0);
+        } else {
+          await playAudio(current, pauseOffset);
+        }
+      }
+    }
+
+    async function loadAndPlay(index) {
+      pauseOffset = 0;
+      await playAudio(index, 0);
+    }
+
+    // 会話AI（GPT-Liveなど）のストリーム接続用
+    window.connectLiveStream = function(stream) {
+      initAudioContext();
+      try {
+        stopCurrentAudio();
+        const liveSource = audioCtx.createMediaStreamSource(stream);
+        liveSource.connect(analyser);
+        // ライブラリ側ですでにスピーカー出力されている想定のため、destinationには繋がない
+        isPlaying = true;
+      } catch (e) {
+        console.error("Live stream connection failed:", e);
+      }
+    };
+
+    async function requestWakeLock() {
+      try {
+        if ("wakeLock" in navigator && !wakeLock) {
+          wakeLock = await navigator.wakeLock.request("screen");
+          wakeLock.addEventListener("release", () => { wakeLock = null; });
+        }
+      } catch (_) {}
+    }
+
+    document.getElementById("left").addEventListener("click", () => {
+      if (current > 0) loadAndPlay(current - 1);
+    });
+    document.getElementById("center").addEventListener("click", togglePlayback);
+    document.getElementById("right").addEventListener("click", () => {
+      if (current < speeches.length - 1) loadAndPlay(current + 1);
+    });
+
+    document.getElementById("settings-panel").addEventListener("click", e => e.stopPropagation());
+
+    document.addEventListener("contextmenu", event => event.preventDefault());
+    document.addEventListener("gesturestart", event => event.preventDefault());
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && isPlaying) requestWakeLock();
+    });
+  </script>
+</body>
+</html>
