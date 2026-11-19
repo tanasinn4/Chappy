@@ -307,3 +307,218 @@
       player.currentTime = 0;
       player.play().catch(err => {
         statusEl.textContent = `再生エラー: ${speeches[current]} (${err.name})`;
+      });
+      requestWakeLock();
+    }
+
+    function togglePlayback() {
+      if (!speeches.length) return;
+      if (!player.src) {
+        loadAndPlay(current);
+      } else if (player.paused) {
+        player.play().catch(err => {
+          statusEl.textContent = `再生エラー: ${err.name}`;
+        });
+        requestWakeLock();
+      } else {
+        player.pause();
+      }
+    }
+
+    player.addEventListener("playing", () => {
+      isMp3Playing = true;
+      syncMouthLoop();
+    });
+    player.addEventListener("pause", () => {
+      isMp3Playing = false;
+      syncMouthLoop();
+    });
+    player.addEventListener("ended", () => {
+      isMp3Playing = false;
+      syncMouthLoop();
+    });
+    player.addEventListener("error", () => {
+      isMp3Playing = false;
+      syncMouthLoop();
+      statusEl.textContent = `ファイル読込失敗: ${speeches[current]}`;
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && isMp3Playing) {
+        requestWakeLock();
+      }
+    });
+
+    // 左1/3エリア：タップ・上下スワイプ・長押し
+    let activePointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let moved = false;
+    let longPressTimer = null;
+
+    function resetGesture() {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      if (isLongPressing) {
+        isLongPressing = false;
+        syncMouthLoop();
+      }
+      activePointerId = null;
+      moved = false;
+    }
+
+    leftArea.addEventListener("pointerdown", e => {
+      if (activePointerId !== null) return;
+      activePointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      moved = false;
+
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        if (activePointerId !== null && !moved) {
+          isLongPressing = true;
+          syncMouthLoop();
+        }
+      }, LONG_PRESS_DELAY_MS);
+    });
+
+    window.addEventListener("pointermove", e => {
+      if (e.pointerId !== activePointerId) return;
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 14) {
+        moved = true;
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+    });
+
+    window.addEventListener("pointerup", e => {
+      if (e.pointerId !== activePointerId) return;
+      const dy = e.clientY - startY;
+      const wasLongPressing = isLongPressing;
+      const wasMoved = moved;
+
+      resetGesture();
+
+      if (wasLongPressing) return;
+
+      if (dy <= -SWIPE_THRESHOLD_PX) {
+        if (current < speeches.length - 1) loadAndPlay(current + 1);
+        return;
+      }
+
+      if (dy >= SWIPE_THRESHOLD_PX) {
+        if (current > 0) loadAndPlay(current - 1);
+        return;
+      }
+
+      if (!wasMoved) {
+        togglePlayback();
+      }
+    });
+
+    window.addEventListener("pointercancel", e => {
+      if (e.pointerId === activePointerId) resetGesture();
+    });
+
+    window.addEventListener("blur", resetGesture);
+
+    document.addEventListener("contextmenu", event => {
+      if (!event.target.closest("#settingsPanel")) event.preventDefault();
+    });
+    document.addEventListener("gesturestart", event => event.preventDefault());
+
+    // 設定ボタン
+    toggleSettingsBtn.addEventListener("pointerup", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      settingsPanel.classList.toggle("open");
+    });
+
+    settingsPanel.addEventListener("pointerdown", e => e.stopPropagation());
+    settingsPanel.addEventListener("pointerup", e => e.stopPropagation());
+
+    async function toggleFullscreen() {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (_) {
+        statusEl.textContent = "全画面非対応またはブロックされました";
+      }
+    }
+
+    document.getElementById("fullscreenBtn").addEventListener("click", toggleFullscreen);
+
+    threshold.addEventListener("input", () => {
+      thresholdValue.textContent = threshold.value;
+    });
+
+    function createImageElement(src, onLoaded, onError) {
+      const img = new Image();
+      img.onload = () => onLoaded(img);
+      if (onError) img.onerror = onError;
+      img.src = src;
+    }
+
+    if (DEFAULT_CLOSED_IMAGE) {
+      createImageElement(
+        DEFAULT_CLOSED_IMAGE,
+        img => {
+          closedImage = img;
+          updateFace();
+        },
+        () => {
+          closedImage = null;
+          updateFace();
+        }
+      );
+    }
+    if (DEFAULT_OPEN_IMAGE) {
+      createImageElement(
+        DEFAULT_OPEN_IMAGE,
+        img => {
+          openImage = img;
+          updateFace();
+        },
+        () => {
+          openImage = null;
+          updateFace();
+        }
+      );
+    }
+
+    function bindFileInput(inputId, onReady) {
+      document.getElementById(inputId).addEventListener("change", e => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const url = URL.createObjectURL(file);
+        createImageElement(url, img => {
+          onReady(img);
+          URL.revokeObjectURL(url);
+        });
+      });
+    }
+
+    bindFileInput("closedFile", img => {
+      closedImage = img;
+      updateFace();
+    });
+
+    bindFileInput("openFile", img => {
+      openImage = img;
+      updateFace();
+    });
+
+    updateFace();
+    updateStatus();
+  </script>
+</body>
+</html>
