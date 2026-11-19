@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#000000">
   <title>MP3＆AI発話 口パクプレイヤー</title>
   <style>
@@ -48,7 +48,7 @@
       color: #fff;
     }
 
-    /* 左：前へ / 中央：次へor再生切替 / 右：次へ */
+    /* 左：前へ / 中央・右：次へ */
     #left, #center, #right {
       position: fixed;
       top: 0;
@@ -60,15 +60,16 @@
     #center { left: 33.3333%; width: 33.3334%; }
     #right { right: 0; width: 33.3333%; }
 
+    /* Androidステータスバーとの被りを避けるため下に配置 */
     #toggleSettingsBtn {
       position: fixed;
-      top: 12px;
-      right: 12px;
+      top: calc(env(safe-area-inset-top, 0px) + 44px);
+      right: 14px;
       z-index: 20;
-      padding: 8px 14px;
+      padding: 10px 16px;
       border: 1px solid rgba(255, 255, 255, 0.35);
       border-radius: 8px;
-      background: #20252b;
+      background: rgba(32, 37, 43, 0.92);
       color: #9de5a5;
       font-size: 14px;
       cursor: pointer;
@@ -77,11 +78,11 @@
     #settingsPanel {
       display: none;
       position: fixed;
-      top: 54px;
-      right: 12px;
+      top: calc(env(safe-area-inset-top, 0px) + 92px);
+      right: 14px;
       z-index: 20;
-      width: min(340px, calc(100vw - 24px));
-      max-height: calc(100vh - 70px);
+      width: min(340px, calc(100vw - 28px));
+      max-height: calc(100vh - env(safe-area-inset-top, 0px) - 110px);
       overflow-y: auto;
       padding: 16px;
       box-sizing: border-box;
@@ -251,8 +252,6 @@
       syncMouthLoop();
     }
 
-    // Realtime API等のイベントオブジェクトを受け取る窓口
-    // 例: dataChannel.addEventListener("message", e => window.handleRealtimeEvent(e.data));
     window.handleRealtimeEvent = function(rawEvent) {
       let evt = rawEvent;
       if (typeof rawEvent === "string") {
@@ -275,7 +274,6 @@
       }
     };
 
-    // iframe / 別ウィンドウからの postMessage にも対応
     window.addEventListener("message", event => {
       window.handleRealtimeEvent(event.data);
     });
@@ -302,7 +300,6 @@
       requestWakeLock();
     }
 
-    // 画面タップで次のMP3を再生（再生中なら次へ、未再生なら先頭から再生）
     function handleScreenTapNext() {
       if (!speeches.length) return;
       if (!player.src) {
