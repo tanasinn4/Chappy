@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>音声プレイヤー＆口パク連動</title>
   <style>
     html, body {
@@ -145,6 +147,10 @@
       background: #7a8590;
     }
 
+    .panel-btn.sub {
+      background: #475569;
+    }
+
     hr {
       border: none;
       border-top: 1px solid rgba(255, 255, 255, 0.15);
@@ -155,6 +161,13 @@
       width: 100%;
       font-size: 12px;
       margin-bottom: 6px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.5;
+      margin-top: 8px;
     }
   </style>
 </head>
@@ -185,6 +198,13 @@
       <button type="button" class="panel-btn" id="startMicBtn">マイク開始</button>
       <button type="button" class="panel-btn stop" id="stopMicBtn">停止</button>
     </div>
+
+    <div>
+      <button type="button" class="panel-btn sub" id="fullscreenBtn">全画面切替</button>
+    </div>
+    <p class="hint">
+      ※iPhone等は「ホーム画面に追加」から開くとアドレスバーなしで起動しやすくなります。
+    </p>
 
     <hr>
 
@@ -300,6 +320,20 @@
         }
       } catch (_) {}
     }
+
+    async function toggleFullscreen() {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (err) {
+        statusEl.textContent = "全画面非対応またはブロックされました";
+      }
+    }
+
+    document.getElementById("fullscreenBtn").addEventListener("click", toggleFullscreen);
 
     document.getElementById("left").addEventListener("click", () => {
       if (current > 0) loadAndPlay(current - 1);
