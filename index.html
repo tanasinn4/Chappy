@@ -176,12 +176,6 @@
 
     <hr>
 
-    <p>音量の反応閾値</p>
-    <input type="range" id="threshold" min="1" max="30" value="8">
-    <p id="thresholdValue">8</p>
-
-    <hr>
-
     <p>口を閉じた画像</p>
     <input type="file" id="closedFile" accept="image/*">
 
@@ -220,7 +214,6 @@
     const statusEl = document.getElementById("status");
     const leftArea = document.getElementById("leftArea");
     const threshold = document.getElementById("threshold");
-    const thresholdValue = document.getElementById("thresholdValue");
     const toggleSettingsBtn = document.getElementById("toggleSettingsBtn");
     const settingsPanel = document.getElementById("settingsPanel");
 
@@ -443,10 +436,6 @@
     }
 
     document.getElementById("fullscreenBtn").addEventListener("click", toggleFullscreen);
-
-    threshold.addEventListener("input", () => {
-      thresholdValue.textContent = threshold.value;
-    });
 
     function createImageElement(src, onLoaded) {
       const img = new Image();
