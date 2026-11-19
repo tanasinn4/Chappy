@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <meta name="theme-color" content="#000000">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <title>音声プレイヤー＆口パク連動</title>
+  <title>MP3＆AI発話 口パクプレイヤー</title>
   <style>
     html, body {
       width: 100%;
@@ -28,7 +26,6 @@
       background: #111 url("background.jpg") center center / contain no-repeat;
     }
 
-    /* キャラクター表示エリア */
     #character {
       position: fixed;
       inset: 0;
@@ -51,7 +48,7 @@
       color: #fff;
     }
 
-    /* 左・中央・右のタップ領域 */
+    /* 左：前へ / 中央：次へor再生切替 / 右：次へ */
     #left, #center, #right {
       position: fixed;
       top: 0;
@@ -63,7 +60,6 @@
     #center { left: 33.3333%; width: 33.3334%; }
     #right { right: 0; width: 33.3333%; }
 
-    /* 設定開閉ボタンとパネル */
     #toggleSettingsBtn {
       position: fixed;
       top: 12px;
@@ -111,40 +107,15 @@
       margin: 8px 0;
     }
 
-    .meter {
-      width: 100%;
-      height: 14px;
-      margin: 8px 0 12px;
-      background: #22282e;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    #bar {
-      height: 100%;
-      width: 0%;
-      background: #75d98b;
-      transition: width 0.05s;
-    }
-
-    input[type=range] {
-      width: 100%;
-      cursor: pointer;
-    }
-
     .panel-btn {
-      padding: 8px 16px;
-      margin: 6px 4px;
+      padding: 8px 14px;
+      margin: 4px;
       border: none;
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 13px;
       background: #65b875;
       color: #fff;
       cursor: pointer;
-    }
-
-    .panel-btn.stop {
-      background: #7a8590;
     }
 
     .panel-btn.sub {
@@ -162,17 +133,10 @@
       font-size: 12px;
       margin-bottom: 6px;
     }
-
-    .hint {
-      font-size: 12px;
-      color: #cbd5e1;
-      line-height: 1.5;
-      margin-top: 8px;
-    }
   </style>
 </head>
 <body>
-  <main id="screen" aria-label="音声プレイヤー">
+  <main id="screen" aria-label="口パクプレイヤー">
     <div id="left"></div>
     <div id="center"></div>
     <div id="right"></div>
@@ -182,29 +146,16 @@
     <div class="face" id="face">😐</div>
   </div>
 
-  <button type="button" id="toggleSettingsBtn">マイク設定</button>
+  <button type="button" id="toggleSettingsBtn">設定</button>
 
-  <aside id="settingsPanel" aria-label="マイク・口パク設定">
-    <div id="status">停止中</div>
+  <aside id="settingsPanel" aria-label="表示・テスト設定">
+    <div id="status">待機中</div>
 
-    <div class="meter">
-      <div id="bar"></div>
-    </div>
-
-    <p>音量の反応閾値: <span id="thresholdValue">8</span></p>
-    <input type="range" id="threshold" min="1" max="30" value="8">
-
+    <p>AI発話イベントテスト</p>
     <div>
-      <button type="button" class="panel-btn" id="startMicBtn">マイク開始</button>
-      <button type="button" class="panel-btn stop" id="stopMicBtn">停止</button>
+      <button type="button" class="panel-btn" id="simStartBtn">buffer.started</button>
+      <button type="button" class="panel-btn sub" id="simStopBtn">buffer.stopped</button>
     </div>
-
-    <div>
-      <button type="button" class="panel-btn sub" id="fullscreenBtn">全画面切替</button>
-    </div>
-    <p class="hint">
-      ※iPhone等は「ホーム画面に追加」から開くとアドレスバーなしで起動しやすくなります。
-    </p>
 
     <hr>
 
@@ -216,102 +167,122 @@
   </aside>
 
   <script>
+    // ==========================================
+    // 1. MP3音声ファイル設定（audio フォルダに配置）
+    // ==========================================
     const speeches = [
       "audio/01_opening.mp3",
       "audio/02_kanpai.mp3",
       "audio/03_toast.mp3"
     ];
 
-    const DEFAULT_CLOSED_IMAGE = null;
-    const DEFAULT_OPEN_IMAGE = null;
+    // 初期画像パス（使わない場合は null のままでOK）
+    const DEFAULT_CLOSED_IMAGE = null; // 例: "images/closed.png"
+    const DEFAULT_OPEN_IMAGE = null;   // 例: "images/open.png"
+
+    // 口パクの開閉周期（ミリ秒）
+    const MOUTH_INTERVAL_MS = 140;
 
     let current = 0;
     const player = new Audio();
     player.preload = "auto";
     let wakeLock = null;
 
-    let audioContext = null;
-    let analyser = null;
-    let microphone = null;
-    let stream = null;
-    let animationId = null;
-    let mp3MouthTimer = null;
+    let isMp3Playing = false;
+    let isAiSpeaking = false;
+    let mouthOpen = false;
+    let mouthTimer = null;
 
     let closedImage = null;
     let openImage = null;
 
-    let isTalking = false;
-    let isMicTalking = false;
-    let isMp3MouthOpen = false;
-    let lastSoundTime = 0;
-
     const face = document.getElementById("face");
     const statusEl = document.getElementById("status");
-    const bar = document.getElementById("bar");
-    const threshold = document.getElementById("threshold");
-    const thresholdValue = document.getElementById("thresholdValue");
     const settingsPanel = document.getElementById("settingsPanel");
 
-    function refreshMouthState() {
-      const isMp3Playing = !player.paused && !player.ended && player.readyState > 2;
-      isTalking = isMicTalking || (isMp3Playing && isMp3MouthOpen);
-      updateFace();
-      if (stream || animationId) {
-        statusEl.textContent = isTalking ? "おしゃべり中！" : "待機中";
-      } else if (isMp3Playing) {
-        statusEl.textContent = "MP3再生中";
-      } else {
-        statusEl.textContent = "停止中";
-      }
-    }
-
-    function startMp3MouthLoop() {
-      if (mp3MouthTimer) return;
-      mp3MouthTimer = setInterval(() => {
-        if (!player.paused && !player.ended) {
-          isMp3MouthOpen = !isMp3MouthOpen;
-        } else {
-          isMp3MouthOpen = false;
+    function updateFace() {
+      const shouldShowOpen = (isMp3Playing || isAiSpeaking) && mouthOpen;
+      if (closedImage && openImage) {
+        const targetImg = shouldShowOpen ? openImage : closedImage;
+        if (face.firstChild !== targetImg) {
+          face.innerHTML = "";
+          face.appendChild(targetImg);
         }
-        refreshMouthState();
-      }, 140);
-    }
-
-    player.addEventListener("play", () => {
-      startMp3MouthLoop();
-      refreshMouthState();
-    });
-    player.addEventListener("pause", () => {
-      isMp3MouthOpen = false;
-      refreshMouthState();
-    });
-    player.addEventListener("ended", () => {
-      isMp3MouthOpen = false;
-      refreshMouthState();
-    });
-
-    function loadAndPlay(index) {
-      if (speeches.length === 0) return;
-      current = Math.max(0, Math.min(index, speeches.length - 1));
-      player.pause();
-      player.src = speeches[current];
-      player.currentTime = 0;
-      player.play().catch(() => {});
-      requestWakeLock();
-    }
-
-    function togglePlayback() {
-      if (!speeches.length) return;
-      if (!player.src) {
-        loadAndPlay(current);
-      } else if (player.paused) {
-        player.play().catch(() => {});
-        requestWakeLock();
       } else {
-        player.pause();
+        face.textContent = shouldShowOpen ? "😮" : "😐";
       }
     }
 
+    function updateStatus() {
+      if (isAiSpeaking && isMp3Playing) {
+        statusEl.textContent = "AI発話中 + MP3再生中";
+      } else if (isAiSpeaking) {
+        statusEl.textContent = "AI発話中（buffer.started）";
+      } else if (isMp3Playing) {
+        statusEl.textContent = `MP3再生中 (${current + 1}/${speeches.length})`;
+      } else {
+        statusEl.textContent = "待機中";
+      }
+    }
+
+    function syncMouthLoop() {
+      const active = isMp3Playing || isAiSpeaking;
+      if (active && !mouthTimer) {
+        mouthOpen = true;
+        updateFace();
+        mouthTimer = setInterval(() => {
+          mouthOpen = !mouthOpen;
+          updateFace();
+        }, MOUTH_INTERVAL_MS);
+      } else if (!active && mouthTimer) {
+        clearInterval(mouthTimer);
+        mouthTimer = null;
+        mouthOpen = false;
+        updateFace();
+      }
+      updateStatus();
+    }
+
+    // ==========================================
+    // 2. データチャネル / 外部イベント連携
+    // ==========================================
+    function setAiSpeaking(speaking) {
+      isAiSpeaking = Boolean(speaking);
+      syncMouthLoop();
+    }
+
+    // Realtime API等のイベントオブジェクトを受け取る窓口
+    // 例: dataChannel.addEventListener("message", e => window.handleRealtimeEvent(e.data));
+    window.handleRealtimeEvent = function(rawEvent) {
+      let evt = rawEvent;
+      if (typeof rawEvent === "string") {
+        try {
+          evt = JSON.parse(rawEvent);
+        } catch (_) {
+          return;
+        }
+      }
+      if (!evt || typeof evt.type !== "string") return;
+
+      if (evt.type === "output_audio_buffer.started") {
+        setAiSpeaking(true);
+      } else if (
+        evt.type === "output_audio_buffer.stopped" ||
+        evt.type === "output_audio_buffer.cleared" ||
+        evt.type === "response.done"
+      ) {
+        setAiSpeaking(false);
+      }
+    };
+
+    // iframe / 別ウィンドウからの postMessage にも対応
+    window.addEventListener("message", event => {
+      window.handleRealtimeEvent(event.data);
+    });
+
+    // ==========================================
+    // 3. MP3再生・画面タップ操作
+    // ==========================================
     async function requestWakeLock() {
       try {
         if ("wakeLock" in navigator && !wakeLock) {
@@ -321,30 +292,49 @@
       } catch (_) {}
     }
 
-    async function toggleFullscreen() {
-      try {
-        if (!document.fullscreenElement) {
-          await document.documentElement.requestFullscreen();
-        } else {
-          await document.exitFullscreen();
-        }
-      } catch (err) {
-        statusEl.textContent = "全画面非対応またはブロックされました";
+    function playTrack(index) {
+      if (!speeches.length) return;
+      current = ((index % speeches.length) + speeches.length) % speeches.length;
+      player.pause();
+      player.src = speeches[current];
+      player.currentTime = 0;
+      player.play().catch(() => {});
+      requestWakeLock();
+    }
+
+    // 画面タップで次のMP3を再生（再生中なら次へ、未再生なら先頭から再生）
+    function handleScreenTapNext() {
+      if (!speeches.length) return;
+      if (!player.src) {
+        playTrack(0);
+      } else {
+        playTrack(current + 1);
       }
     }
 
-    document.getElementById("fullscreenBtn").addEventListener("click", toggleFullscreen);
+    player.addEventListener("play", () => {
+      isMp3Playing = true;
+      syncMouthLoop();
+    });
+    player.addEventListener("pause", () => {
+      isMp3Playing = false;
+      syncMouthLoop();
+    });
+    player.addEventListener("ended", () => {
+      isMp3Playing = false;
+      syncMouthLoop();
+    });
 
     document.getElementById("left").addEventListener("click", () => {
-      if (current > 0) loadAndPlay(current - 1);
+      if (speeches.length) playTrack(current - 1);
     });
-    document.getElementById("center").addEventListener("click", togglePlayback);
-    document.getElementById("right").addEventListener("click", () => {
-      if (current < speeches.length - 1) loadAndPlay(current + 1);
-    });
+    document.getElementById("center").addEventListener("click", handleScreenTapNext);
+    document.getElementById("right").addEventListener("click", handleScreenTapNext);
 
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && !player.paused) requestWakeLock();
+      if (document.visibilityState === "visible" && isMp3Playing) {
+        requestWakeLock();
+      }
     });
 
     document.addEventListener("contextmenu", event => {
@@ -352,12 +342,22 @@
     });
     document.addEventListener("gesturestart", event => event.preventDefault());
 
+    // ==========================================
+    // 4. 設定パネル・画像切替・テストボタン
+    // ==========================================
     document.getElementById("toggleSettingsBtn").addEventListener("click", e => {
       e.stopPropagation();
       settingsPanel.classList.toggle("open");
     });
 
     settingsPanel.addEventListener("click", e => e.stopPropagation());
+
+    document.getElementById("simStartBtn").addEventListener("click", () => {
+      window.handleRealtimeEvent({ type: "output_audio_buffer.started" });
+    });
+    document.getElementById("simStopBtn").addEventListener("click", () => {
+      window.handleRealtimeEvent({ type: "output_audio_buffer.stopped" });
+    });
 
     function createImageElement(src, onLoaded) {
       const img = new Image();
@@ -401,100 +401,8 @@
       updateFace();
     });
 
-    function updateFace() {
-      if (closedImage && openImage) {
-        const targetImg = isTalking ? openImage : closedImage;
-        if (face.firstChild !== targetImg) {
-          face.innerHTML = "";
-          face.appendChild(targetImg);
-        }
-      } else {
-        face.textContent = isTalking ? "😮" : "😐";
-      }
-    }
-
-    threshold.addEventListener("input", () => {
-      thresholdValue.textContent = threshold.value;
-    });
-
-    async function startMic() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-          }
-        });
-
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 1024;
-
-        microphone = audioContext.createMediaStreamSource(stream);
-        microphone.connect(analyser);
-
-        statusEl.textContent = "音声検知中";
-        detectSound();
-      } catch (error) {
-        statusEl.textContent = "マイクを使用できません: " + error.message;
-      }
-    }
-
-    function detectSound() {
-      if (!analyser) return;
-
-      const data = new Uint8Array(analyser.fftSize);
-      analyser.getByteTimeDomainData(data);
-
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const value = (data[i] - 128) / 128;
-        sum += value * value;
-      }
-
-      const rms = Math.sqrt(sum / data.length);
-      const volume = rms * 100;
-
-      bar.style.width = Math.min(volume * 3, 100) + "%";
-
-      const limit = Number(threshold.value);
-      if (volume > limit) {
-        isMicTalking = true;
-        lastSoundTime = performance.now();
-      } else if (performance.now() - lastSoundTime > 180) {
-        isMicTalking = false;
-      }
-
-      refreshMouthState();
-      animationId = requestAnimationFrame(detectSound);
-    }
-
-    function stopMic() {
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-      }
-
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-      }
-
-      if (audioContext) {
-        audioContext.close();
-        audioContext = null;
-      }
-
-      analyser = null;
-      microphone = null;
-      isMicTalking = false;
-      bar.style.width = "0%";
-      refreshMouthState();
-    }
-
-    document.getElementById("startMicBtn").addEventListener("click", startMic);
-    document.getElementById("stopMicBtn").addEventListener("click", stopMic);
+    updateFace();
+    updateStatus();
   </script>
 </body>
 </html>
