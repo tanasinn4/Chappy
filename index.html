@@ -60,10 +60,10 @@
     #center { left: 33.3333%; width: 33.3334%; }
     #right { right: 0; width: 33.3333%; }
 
-    /* Androidステータスバーとの被りを避けるため下に配置 */
+    /* Androidステータスバーとの被り回避のため下に配置 */
     #toggleSettingsBtn {
       position: fixed;
-      top: calc(env(safe-area-inset-top, 0px) + 44px);
+      top: calc(env(safe-area-inset-top, 0px) + 48px);
       right: 14px;
       z-index: 20;
       padding: 10px 16px;
@@ -78,11 +78,11 @@
     #settingsPanel {
       display: none;
       position: fixed;
-      top: calc(env(safe-area-inset-top, 0px) + 92px);
+      top: calc(env(safe-area-inset-top, 0px) + 96px);
       right: 14px;
       z-index: 20;
       width: min(340px, calc(100vw - 28px));
-      max-height: calc(100vh - env(safe-area-inset-top, 0px) - 110px);
+      max-height: calc(100vh - env(safe-area-inset-top, 0px) - 116px);
       overflow-y: auto;
       padding: 16px;
       box-sizing: border-box;
@@ -252,6 +252,8 @@
       syncMouthLoop();
     }
 
+    // データチャネルの message イベントから呼び出し可能
+    // 例: dataChannel.addEventListener("message", e => window.handleRealtimeEvent(e.data));
     window.handleRealtimeEvent = function(rawEvent) {
       let evt = rawEvent;
       if (typeof rawEvent === "string") {
