@@ -4,71 +4,200 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <meta name="theme-color" content="#000000">
-  <title></title>
+  <title>音声プレイヤー＆口パク連動</title>
   <style>
     html, body {
-      width: 100%; height: 100%; margin: 0; padding: 0;
-      overflow: hidden; background: #000; touch-action: manipulation;
-      -webkit-user-select: none; user-select: none;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
     }
+
     #screen {
-      position: fixed; inset: 0;
-      background: #000 url("closed.png") center center / contain no-repeat;
+      position: fixed;
+      inset: 0;
+      background: #000 url("background.jpg") center center / contain no-repeat;
     }
-    #screen.talking {
-      background-image: url("open.png");
+
+    /* キャラクター表示エリア（背景の上に重ねる場合） */
+    #character {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      pointer-events: none;
+      z-index: 1;
     }
+
+    #character img {
+      max-width: 80%;
+      max-height: 80%;
+      object-fit: contain;
+    }
+
+    .face {
+      font-size: clamp(96px, 24vw, 180px);
+      line-height: 1;
+      transition: transform 0.08s;
+    }
+
+    /* 左・中央・右のタップ領域 */
     #left, #center, #right {
-      position: absolute; top: 0; bottom: 0;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      z-index: 2;
       -webkit-tap-highlight-color: transparent;
     }
     #left { left: 0; width: 33.3333%; }
     #center { left: 33.3333%; width: 33.3334%; }
     #right { right: 0; width: 33.3333%; }
 
-    #settings-panel {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(48, 56, 64, 0.85);
-      color: white;
-      padding: 10px 15px;
-      border-radius: 12px;
-      font-family: sans-serif;
-      font-size: 14px;
+    /* 設定開閉ボタンとパネル */
+    #toggleSettingsBtn {
+      position: fixed;
+      top: 12px;
+      right: 12px;
       z-index: 10;
-      text-align: center;
-      backdrop-filter: blur(5px);
-      pointer-events: auto;
-    }
-    #settings-panel input[type=range] {
-      width: 150px;
-      vertical-align: middle;
-      margin-left: 8px;
-    }
-    #debug-info {
-      margin-top: 5px;
-      font-size: 12px;
+      padding: 8px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 8px;
+      background: rgba(32, 37, 43, 0.85);
       color: #9de5a5;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    #settingsPanel {
+      display: none;
+      position: fixed;
+      top: 54px;
+      right: 12px;
+      z-index: 10;
+      width: min(340px, calc(100vw - 24px));
+      max-height: calc(100vh - 70px);
+      overflow-y: auto;
+      padding: 16px;
+      box-sizing: border-box;
+      background: rgba(48, 56, 64, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+
+    #settingsPanel.open {
+      display: block;
+    }
+
+    #settingsPanel p {
+      margin: 8px 0 4px;
+      font-size: 14px;
+    }
+
+    #status {
+      font-size: 15px;
+      color: #9de5a5;
+      margin: 8px 0;
+    }
+
+    .meter {
+      width: 100%;
+      height: 14px;
+      margin: 8px 0 12px;
+      background: #22282e;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    #bar {
+      height: 100%;
+      width: 0%;
+      background: #75d98b;
+      transition: width 0.05s;
+    }
+
+    input[type=range] {
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .panel-btn {
+      padding: 8px 16px;
+      margin: 6px 4px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #65b875;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .panel-btn.stop {
+      background: #7a8590;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.15);
+      margin: 12px 0;
+    }
+
+    input[type=file] {
+      width: 100%;
+      font-size: 12px;
+      margin-bottom: 6px;
     }
   </style>
 </head>
 <body>
   <main id="screen" aria-label="音声プレイヤー">
+    <div id="character">
+      <div class="face" id="face">😐</div>
+    </div>
+
     <div id="left"></div>
     <div id="center"></div>
     <div id="right"></div>
-
-    <div id="settings-panel" onclick="event.stopPropagation()">
-      <div>感度しきい値: <span id="thresholdValue">1</span> <input type="range" id="threshold" min="0.1" max="10" step="0.1" value="1"></div>
-      <div id="debug-info">現在の音量: 0.00</div>
-    </div>
   </main>
+
+  <button type="button" id="toggleSettingsBtn">マイク設定</button>
+
+  <aside id="settingsPanel" aria-label="マイク・口パク設定">
+    <div id="status">停止中</div>
+
+    <div class="meter">
+      <div id="bar"></div>
+    </div>
+
+    <p>音量の反応閾値: <span id="thresholdValue">8</span></p>
+    <input type="range" id="threshold" min="1" max="30" value="8">
+
+    <div>
+      <button type="button" class="panel-btn" id="startMicBtn">マイク開始</button>
+      <button type="button" class="panel-btn stop" id="stopMicBtn">停止</button>
+    </div>
+
+    <hr>
+
+    <p>口を閉じた画像</p>
+    <input type="file" id="closedFile" accept="image/*">
+
+    <p>口を開いた画像</p>
+    <input type="file" id="openFile" accept="image/*">
+  </aside>
 
   <script>
     // ==========================================
-    // 設定エリア
+    // 1. 音声ファイル設定（audio フォルダに配置）
     // ==========================================
     const speeches = [
       "audio/01_opening.mp3",
@@ -76,177 +205,36 @@
       "audio/03_toast.mp3"
     ];
 
-    const CLOSED_IMAGE = "closed.png";
-    const OPEN_IMAGE   = "open.png";
-    // ==========================================
+    // 初期画像パス（使わない場合は null のままでOK）
+    const DEFAULT_CLOSED_IMAGE = null; // 例: "images/closed.png"
+    const DEFAULT_OPEN_IMAGE = null;   // 例: "images/open.png"
 
     let current = 0;
-    let audioCtx = null;
-    let analyser = null;
-    let dataArray = null;
-    let currentSourceNode = null;
-    let audioBuffers = {}; // 読み込んだ音声をキャッシュ
-    
-    let isPlaying = false;
-    let isTalking = false;
-    let lastSoundTime = 0;
-    let startTime = 0;
-    let pauseOffset = 0;
+    const player = new Audio();
+    player.preload = "auto";
     let wakeLock = null;
 
-    const screenEl = document.getElementById("screen");
-    const thresholdInput = document.getElementById("threshold");
-    const thresholdValueEl = document.getElementById("thresholdValue");
-    const debugInfoEl = document.getElementById("debug-info");
-
-    thresholdInput.addEventListener("input", () => {
-      thresholdValueEl.textContent = thresholdInput.value;
-    });
-
-    new Image().src = CLOSED_IMAGE;
-    new Image().src = OPEN_IMAGE;
-
-    function initAudioContext() {
-      if (!audioCtx) {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AudioContext();
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 2048;
-        dataArray = new Uint8Array(analyser.fftSize);
-        detectVolume();
-      }
-      if (audioCtx.state === "suspended") {
-        audioCtx.resume();
-      }
-    }
-
-    // 音声ファイルを fetch で取得してデコードする
-    async function loadAudioBuffer(url) {
-      if (audioBuffers[url]) return audioBuffers[url];
-      const response = await fetch(url);
-      const arrayBuffer = await response.arrayBuffer();
-      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      audioBuffers[url] = audioBuffer;
-      return audioBuffer;
-    }
-
-    // 音量検知ループ
-    function detectVolume() {
-      requestAnimationFrame(detectVolume);
-      if (!analyser || !dataArray || !isPlaying) {
-        if (isTalking) {
-          isTalking = false;
-          screenEl.classList.remove("talking");
-        }
-        debugInfoEl.textContent = "現在の音量: 0.00 (停止中)";
-        return;
-      }
-
-      analyser.getByteTimeDomainData(dataArray);
-      
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        const value = (dataArray[i] - 128) / 128;
-        sum += value * value;
-      }
-      const rms = Math.sqrt(sum / dataArray.length);
-      const volume = rms * 100;
-
-      debugInfoEl.textContent = `現在の音量: ${volume.toFixed(2)}`;
-
-      const limit = Number(thresholdInput.value);
-
-      if (volume > limit) {
-        if (!isTalking) {
-          isTalking = true;
-          screenEl.classList.add("talking");
-        }
-        lastSoundTime = performance.now();
-      } else if (isTalking && performance.now() - lastSoundTime > 150) {
-        isTalking = false;
-        screenEl.classList.remove("talking");
-      }
-    }
-
-    // 再生停止
-    function stopCurrentAudio() {
-      if (currentSourceNode) {
-        try { currentSourceNode.stop(); } catch(e) {}
-        currentSourceNode.disconnect();
-        currentSourceNode = null;
-      }
-      isPlaying = false;
-    }
-
-    // 音声の再生
-    async function playAudio(index, offset = 0) {
+    function loadAndPlay(index) {
       if (speeches.length === 0) return;
-      initAudioContext();
-      stopCurrentAudio();
-
       current = Math.max(0, Math.min(index, speeches.length - 1));
-      
-      try {
-        const buffer = await loadAudioBuffer(speeches[current]);
-        
-        const source = audioCtx.createBufferSource();
-        source.buffer = buffer;
-        
-        // アナライザー（口パク用）とスピーカー（出力用）に接続
-        source.connect(analyser);
-        analyser.connect(audioCtx.destination);
-
-        source.onended = () => {
-          if (isPlaying && currentSourceNode === source) {
-            stopCurrentAudio();
-          }
-        };
-
-        startTime = audioCtx.currentTime - offset;
-        source.start(0, offset);
-        currentSourceNode = source;
-        isPlaying = true;
-        requestWakeLock();
-      } catch (err) {
-        console.error("Audio load/play error:", err);
-      }
+      player.pause();
+      player.src = speeches[current];
+      player.currentTime = 0;
+      player.play().catch(() => {});
+      requestWakeLock();
     }
 
-    async function togglePlayback() {
+    function togglePlayback() {
       if (!speeches.length) return;
-      initAudioContext();
-
-      if (isPlaying) {
-        // 一時停止（位置を記憶）
-        pauseOffset = audioCtx.currentTime - startTime;
-        stopCurrentAudio();
+      if (!player.src) {
+        loadAndPlay(current);
+      } else if (player.paused) {
+        player.play().catch(() => {});
+        requestWakeLock();
       } else {
-        if (!currentSourceNode && pauseOffset === 0) {
-          await playAudio(current, 0);
-        } else {
-          await playAudio(current, pauseOffset);
-        }
+        player.pause();
       }
     }
-
-    async function loadAndPlay(index) {
-      pauseOffset = 0;
-      await playAudio(index, 0);
-    }
-
-    // 会話AI（GPT-Liveなど）のストリーム接続用
-    window.connectLiveStream = function(stream) {
-      initAudioContext();
-      try {
-        stopCurrentAudio();
-        const liveSource = audioCtx.createMediaStreamSource(stream);
-        liveSource.connect(analyser);
-        // ライブラリ側ですでにスピーカー出力されている想定のため、destinationには繋がない
-        isPlaying = true;
-      } catch (e) {
-        console.error("Live stream connection failed:", e);
-      }
-    };
 
     async function requestWakeLock() {
       try {
@@ -265,14 +253,178 @@
       if (current < speeches.length - 1) loadAndPlay(current + 1);
     });
 
-    document.getElementById("settings-panel").addEventListener("click", e => e.stopPropagation());
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && !player.paused) requestWakeLock();
+    });
 
-    document.addEventListener("contextmenu", event => event.preventDefault());
+    // 誤操作によるメニュー・拡大抑止（設定パネル内の操作は除外）
+    document.addEventListener("contextmenu", event => {
+      if (!event.target.closest("#settingsPanel")) event.preventDefault();
+    });
     document.addEventListener("gesturestart", event => event.preventDefault());
 
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && isPlaying) requestWakeLock();
+    // ==========================================
+    // 2. マイク入力・口パク画像切替設定
+    // ==========================================
+    let audioContext = null;
+    let analyser = null;
+    let microphone = null;
+    let stream = null;
+    let animationId = null;
+
+    let closedImage = null;
+    let openImage = null;
+
+    let isTalking = false;
+    let lastSoundTime = 0;
+
+    const face = document.getElementById("face");
+    const statusEl = document.getElementById("status");
+    const bar = document.getElementById("bar");
+    const threshold = document.getElementById("threshold");
+    const thresholdValue = document.getElementById("thresholdValue");
+    const settingsPanel = document.getElementById("settingsPanel");
+
+    document.getElementById("toggleSettingsBtn").addEventListener("click", e => {
+      e.stopPropagation();
+      settingsPanel.classList.toggle("open");
     });
+
+    // パネル内クリックが左/中/右の音声操作に波及しないようにする
+    settingsPanel.addEventListener("click", e => e.stopPropagation());
+
+    function createImageElement(src, onLoaded) {
+      const img = new Image();
+      img.onload = () => onLoaded(img);
+      img.src = src;
+    }
+
+    if (DEFAULT_CLOSED_IMAGE) {
+      createImageElement(DEFAULT_CLOSED_IMAGE, img => {
+        closedImage = img;
+        updateFace();
+      });
+    }
+    if (DEFAULT_OPEN_IMAGE) {
+      createImageElement(DEFAULT_OPEN_IMAGE, img => {
+        openImage = img;
+        updateFace();
+      });
+    }
+
+    function bindFileInput(inputId, onReady) {
+      document.getElementById(inputId).addEventListener("change", e => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const url = URL.createObjectURL(file);
+        createImageElement(url, img => {
+          onReady(img);
+          URL.revokeObjectURL(url);
+        });
+      });
+    }
+
+    bindFileInput("closedFile", img => {
+      closedImage = img;
+      updateFace();
+    });
+
+    bindFileInput("openFile", img => {
+      openImage = img;
+      updateFace();
+    });
+
+    function updateFace() {
+      if (closedImage && openImage) {
+        const targetImg = isTalking ? openImage : closedImage;
+        if (face.firstChild !== targetImg) {
+          face.innerHTML = "";
+          face.appendChild(targetImg);
+        }
+      } else {
+        face.textContent = isTalking ? "😮" : "😐";
+      }
+    }
+
+    threshold.addEventListener("input", () => {
+      thresholdValue.textContent = threshold.value;
+    });
+
+    async function startMic() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 1024;
+
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+
+        statusEl.textContent = "音声検知中";
+        detectSound();
+      } catch (error) {
+        statusEl.textContent = "マイクを使用できません: " + error.message;
+      }
+    }
+
+    function detectSound() {
+      if (!analyser) return;
+
+      const data = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(data);
+
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const value = (data[i] - 128) / 128;
+        sum += value * value;
+      }
+
+      const rms = Math.sqrt(sum / data.length);
+      const volume = rms * 100;
+
+      bar.style.width = Math.min(volume * 3, 100) + "%";
+
+      const limit = Number(threshold.value);
+      if (volume > limit) {
+        isTalking = true;
+        lastSoundTime = performance.now();
+      } else if (performance.now() - lastSoundTime > 180) {
+        isTalking = false;
+      }
+
+      updateFace();
+      statusEl.textContent = isTalking ? "おしゃべり中！" : "待機中";
+
+      animationId = requestAnimationFrame(detectSound);
+    }
+
+    function stopMic() {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+
+      analyser = null;
+      microphone = null;
+      isTalking = false;
+      bar.style.width = "0%";
+      statusEl.textContent = "停止中";
+      updateFace();
+    }
+
+    document.getElementById("startMicBtn").addEventListener("click", startMic);
+    document.getElementById("stopMicBtn").addEventListener("click", stopMic);
   </script>
 </body>
 </html>
