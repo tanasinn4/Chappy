@@ -12,7 +12,7 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
-      background: #000;
+      background: #111;
       color: #fff;
       font-family: sans-serif;
       touch-action: manipulation;
@@ -23,18 +23,18 @@
     #screen {
       position: fixed;
       inset: 0;
-      background: #000 url("background.jpg") center center / contain no-repeat;
+      background: #111 url("background.jpg") center center / contain no-repeat;
     }
 
     /* キャラクター表示エリア */
     #character {
-      position: absolute;
+      position: fixed;
       inset: 0;
       display: flex;
       justify-content: center;
       align-items: center;
       pointer-events: none;
-      z-index: 1;
+      z-index: 5;
     }
 
     #character img {
@@ -44,14 +44,14 @@
     }
 
     .face {
-      font-size: clamp(96px, 24vw, 180px);
+      font-size: 120px;
       line-height: 1;
-      transition: transform 0.08s;
+      color: #fff;
     }
 
     /* 左・中央・右のタップ領域 */
     #left, #center, #right {
-      position: absolute;
+      position: fixed;
       top: 0;
       bottom: 0;
       z-index: 2;
@@ -66,11 +66,11 @@
       position: fixed;
       top: 12px;
       right: 12px;
-      z-index: 10;
+      z-index: 20;
       padding: 8px 14px;
-      border: 1px solid rgba(255, 255, 255, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.35);
       border-radius: 8px;
-      background: rgba(32, 37, 43, 0.85);
+      background: #20252b;
       color: #9de5a5;
       font-size: 14px;
       cursor: pointer;
@@ -81,14 +81,14 @@
       position: fixed;
       top: 54px;
       right: 12px;
-      z-index: 10;
+      z-index: 20;
       width: min(340px, calc(100vw - 24px));
       max-height: calc(100vh - 70px);
       overflow-y: auto;
       padding: 16px;
       box-sizing: border-box;
-      background: rgba(48, 56, 64, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: #303840;
+      border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 12px;
       text-align: center;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
@@ -160,14 +160,14 @@
 </head>
 <body>
   <main id="screen" aria-label="音声プレイヤー">
-    <div id="character">
-      <div class="face" id="face">😐</div>
-    </div>
-
     <div id="left"></div>
     <div id="center"></div>
     <div id="right"></div>
   </main>
+
+  <div id="character">
+    <div class="face" id="face">😐</div>
+  </div>
 
   <button type="button" id="toggleSettingsBtn">マイク設定</button>
 
@@ -196,18 +196,14 @@
   </aside>
 
   <script>
-    // ==========================================
-    // 1. MP3音声ファイル設定（audio フォルダに配置）
-    // ==========================================
     const speeches = [
       "audio/01_opening.mp3",
       "audio/02_kanpai.mp3",
       "audio/03_toast.mp3"
     ];
 
-    // 初期画像パス（使わない場合は null のままでOK）
-    const DEFAULT_CLOSED_IMAGE = null; // 例: "images/closed.png"
-    const DEFAULT_OPEN_IMAGE = null;   // 例: "images/open.png"
+    const DEFAULT_CLOSED_IMAGE = null;
+    const DEFAULT_OPEN_IMAGE = null;
 
     let current = 0;
     const player = new Audio();
@@ -322,9 +318,6 @@
     });
     document.addEventListener("gesturestart", event => event.preventDefault());
 
-    // ==========================================
-    // 2. 設定パネル・画像切替・マイク制御
-    // ==========================================
     document.getElementById("toggleSettingsBtn").addEventListener("click", e => {
       e.stopPropagation();
       settingsPanel.classList.toggle("open");
