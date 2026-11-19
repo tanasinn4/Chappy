@@ -15,7 +15,7 @@
       background: #000;
       color: #fff;
       font-family: sans-serif;
-      touch-action: none;
+      touch-action: manipulation;
       -webkit-user-select: none;
       user-select: none;
     }
@@ -48,10 +48,13 @@
       color: #fff;
     }
 
-    /* 画面全体のジェスチャー受付領域 */
-    #touchArea {
+    /* 画面左1/3の操作領域 */
+    #leftArea {
       position: fixed;
-      inset: 0;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 33.3333%;
       z-index: 2;
       -webkit-tap-highlight-color: transparent;
     }
@@ -61,7 +64,7 @@
       position: fixed;
       top: calc(env(safe-area-inset-top, 0px) + 48px);
       right: 14px;
-      z-index: 20;
+      z-index: 30;
       padding: 10px 16px;
       border: 1px solid rgba(255, 255, 255, 0.35);
       border-radius: 8px;
@@ -76,7 +79,7 @@
       position: fixed;
       top: calc(env(safe-area-inset-top, 0px) + 96px);
       right: 14px;
-      z-index: 20;
+      z-index: 30;
       width: min(340px, calc(100vw - 28px));
       max-height: calc(100vh - env(safe-area-inset-top, 0px) - 116px);
       overflow-y: auto;
@@ -87,7 +90,6 @@
       border-radius: 12px;
       text-align: center;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-      touch-action: auto;
     }
 
     #settingsPanel.open {
@@ -147,7 +149,7 @@
 </head>
 <body>
   <main id="screen" aria-label="口パクプレイヤー">
-    <div id="touchArea"></div>
+    <div id="leftArea"></div>
   </main>
 
   <div id="character">
@@ -159,6 +161,7 @@
   <aside id="settingsPanel" aria-label="表示・操作設定">
     <div id="status">待機中</div>
     <div class="guide">
+      【左1/3エリア】<br>
       上スワイプ：次の音 ／ 下スワイプ：前の音<br>
       タップ：再生・停止 ／ 長押し：口パク
     </div>
@@ -183,23 +186,16 @@
   </aside>
 
   <script>
-    // ==========================================
-    // 1. MP3音声ファイル設定（audio フォルダに配置）
-    // ==========================================
     const speeches = [
       "audio/01_opening.mp3",
       "audio/02_kanpai.mp3",
       "audio/03_toast.mp3"
     ];
 
-    // 初期画像パス（使わない場合は null のままでOK）
-    const DEFAULT_CLOSED_IMAGE = null; // 例: "images/closed.png"
-    const DEFAULT_OPEN_IMAGE = null;   // 例: "images/open.png"
+    const DEFAULT_CLOSED_IMAGE = null;
+    const DEFAULT_OPEN_IMAGE = null;
 
-    // 口パクの開閉周期（ミリ秒）
     const MOUTH_INTERVAL_MS = 140;
-
-    // ジェスチャー判定のしきい値
     const SWIPE_THRESHOLD_PX = 45;
     const LONG_PRESS_DELAY_MS = 220;
 
@@ -218,9 +214,10 @@
 
     const face = document.getElementById("face");
     const statusEl = document.getElementById("status");
-    const touchArea = document.getElementById("touchArea");
+    const leftArea = document.getElementById("leftArea");
     const threshold = document.getElementById("threshold");
     const thresholdValue = document.getElementById("thresholdValue");
+    const toggleSettingsBtn = document.getElementById("toggleSettingsBtn");
     const settingsPanel = document.getElementById("settingsPanel");
 
     function updateFace() {
@@ -244,177 +241,4 @@
       } else if (isMp3Playing) {
         statusEl.textContent = `MP3再生中 (${current + 1}/${speeches.length})`;
       } else {
-        statusEl.textContent = "待機中";
-      }
-    }
-
-    function syncMouthLoop() {
-      const active = isMp3Playing || isLongPressing;
-      if (active) {
-        if (!mouthTimer) {
-          mouthOpen = true;
-          updateFace();
-          mouthTimer = setInterval(() => {
-            if (!(isMp3Playing || isLongPressing)) {
-              clearInterval(mouthTimer);
-              mouthTimer = null;
-              mouthOpen = false;
-              updateFace();
-              return;
-            }
-            mouthOpen = !mouthOpen;
-            updateFace();
-          }, MOUTH_INTERVAL_MS);
-        }
-      } else {
-        if (mouthTimer) {
-          clearInterval(mouthTimer);
-          mouthTimer = null;
-        }
-        mouthOpen = false;
-        updateFace();
-      }
-      updateStatus();
-    }
-
-    // ==========================================
-    // 2. MP3再生・スリープ防止
-    // ==========================================
-    async function requestWakeLock() {
-      try {
-        if ("wakeLock" in navigator && !wakeLock) {
-          wakeLock = await navigator.wakeLock.request("screen");
-          wakeLock.addEventListener("release", () => { wakeLock = null; });
-        }
-      } catch (_) {}
-    }
-
-    function loadAndPlay(index) {
-      if (!speeches.length) return;
-      current = Math.max(0, Math.min(index, speeches.length - 1));
-      player.pause();
-      player.src = speeches[current];
-      player.currentTime = 0;
-      player.play().catch(() => {});
-      requestWakeLock();
-    }
-
-    function togglePlayback() {
-      if (!speeches.length) return;
-      if (!player.src) {
-        loadAndPlay(current);
-      } else if (player.paused) {
-        player.play().catch(() => {});
-        requestWakeLock();
-      } else {
-        player.pause();
-      }
-    }
-
-    player.addEventListener("playing", () => {
-      isMp3Playing = true;
-      syncMouthLoop();
-    });
-    player.addEventListener("pause", () => {
-      isMp3Playing = false;
-      syncMouthLoop();
-    });
-    player.addEventListener("ended", () => {
-      isMp3Playing = false;
-      syncMouthLoop();
-    });
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && isMp3Playing) {
-        requestWakeLock();
-      }
-    });
-
-    // ==========================================
-    // 3. スワイプ・タップ・長押し判定（Pointer Events）
-    // ==========================================
-    let activePointerId = null;
-    let startX = 0;
-    let startY = 0;
-    let movedBeyondTap = false;
-    let longPressTimer = null;
-
-    function clearGestureState() {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-      if (isLongPressing) {
-        isLongPressing = false;
-        syncMouthLoop();
-      }
-      activePointerId = null;
-      movedBeyondTap = false;
-    }
-
-    touchArea.addEventListener("pointerdown", e => {
-      if (activePointerId !== null) return;
-      activePointerId = e.pointerId;
-      startX = e.clientX;
-      startY = e.clientY;
-      movedBeyondTap = false;
-
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null;
-        if (activePointerId !== null && !movedBeyondTap) {
-          isLongPressing = true;
-          syncMouthLoop();
-        }
-      }, LONG_PRESS_DELAY_MS);
-    });
-
-    touchArea.addEventListener("pointermove", e => {
-      if (e.pointerId !== activePointerId) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      if (Math.hypot(dx, dy) > 14) {
-        movedBeyondTap = true;
-        if (longPressTimer) {
-          clearTimeout(longPressTimer);
-          longPressTimer = null;
-        }
-      }
-    });
-
-    touchArea.addEventListener("pointerup", e => {
-      if (e.pointerId !== activePointerId) return;
-      const dy = e.clientY - startY;
-      const wasLongPressing = isLongPressing;
-      const wasMoved = movedBeyondTap;
-
-      clearGestureState();
-
-      // 長押ししていた場合は離して口を閉じるだけ（再生/停止は発動させない）
-      if (wasLongPressing) return;
-
-      // 上スワイプ（dy がマイナス方向）→ 次の音
-      if (dy <= -SWIPE_THRESHOLD_PX) {
-        if (current < speeches.length - 1) loadAndPlay(current + 1);
-        return;
-      }
-
-      // 下スワイプ（dy がプラス方向）→ 前の音
-      if (dy >= SWIPE_THRESHOLD_PX) {
-        if (current > 0) loadAndPlay(current - 1);
-        return;
-      }
-
-      // 移動が小さければタップ → 再生／停止
-      if (!wasMoved) {
-        togglePlayback();
-      }
-    });
-
-    touchArea.addEventListener("pointercancel", e => {
-      if (e.pointerId === activePointerId) {
-        clearGestureState();
-      }
-    });
-
-    window
+        statusEl
